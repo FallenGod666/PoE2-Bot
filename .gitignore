@@ -2,7 +2,6 @@
 .tmp/
 __pycache__/
 .env
-config.json
 *.pyc
 .vscode/
 .idea/

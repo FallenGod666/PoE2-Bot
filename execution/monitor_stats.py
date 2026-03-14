@@ -3,7 +3,6 @@ import os
 import json
 from screen_capture import check_threshold
 from potion_controls import use_potion
-
 CONFIG_FILE = "config.json"
 
 def load_config():
@@ -29,13 +28,31 @@ def run_bot():
     
     check_interval = config.get("interval", 0.1)
     cooldown = config.get("cooldown", 1.0)
+    skills = config.get("skills", [])
 
-    last_hp_use = 0
-    last_mana_use = 0
+    last_hp_use = 0.0
+    last_mana_use = 0.0
     
-    print("=== Bot de Poções Poe Bot ===")
+    # Inicializa timers para skills
+    skill_timers = []
+    for skill in skills:
+        skill_timers.append({
+            "key": skill["key"],
+            "interval": float(skill["timer"]),
+            "last_use": 0.0,
+            "enabled": skill.get("enabled", False),
+            "use_pixel": skill.get("use_pixel", False),
+            "pixel_coords": skill.get("pixel_coords", [0, 0]),
+            "pixel_color": tuple(skill.get("pixel_color", [0, 0, 0]))
+        })
+    
+    print("=== Bot de Poções e Magias Poe Bot ===")
     print(f"Monitorando HP em {hp_coords} (Tecla: {hp_key})")
     print(f"Monitorando Mana em {mana_coords} (Tecla: {mana_key})")
+    for i, s in enumerate(skill_timers):
+        status = "ON" if s["enabled"] else "OFF"
+        mode = "Pixel" if s["use_pixel"] else f"Timer ({s['interval']}s)"
+        print(f"Skill {i+1} [{status}]: Tecla {s['key']} ({mode})")
     print("Pressione CTRL+C para parar.")
 
     try:
@@ -45,8 +62,6 @@ def run_bot():
             # Checar Saúde
             if now - last_hp_use > cooldown:
                 # check_threshold retorna True se a cor capturada for similar à alvo
-                # Se for similar, o globo está "cheio" naquele ponto.
-                # Se NÃO for similar, o globo baixou daquele ponto -> usar poção.
                 is_healthy = check_threshold(hp_coords[0], hp_coords[1], hp_color)
                 if not is_healthy:
                     print("HP baixo detectado!")
@@ -60,6 +75,30 @@ def run_bot():
                     print("Mana baixa detectada!")
                     use_potion(mana_key)
                     last_mana_use = now
+
+            # Checar Skills (Magias)
+            for s in skill_timers:
+                if not s["enabled"]:
+                    continue
+
+                should_cast = False
+                
+                # Prioridade 1: Pixel (Se habilitado, casta se o pixel estiver ativo)
+                if s["use_pixel"]:
+                    # check_threshold retorna True se as cores batem (skill ativa/clara)
+                    is_active = check_threshold(s["pixel_coords"][0], s["pixel_coords"][1], s["pixel_color"])
+                    # Cooldown interno de 0.5s para não spammar enquanto o pixel brilha
+                    if is_active and (now - s["last_use"] > 0.5):
+                        should_cast = True
+                
+                # Prioridade 2: Timer (Se timer >= 1s e não estiver usando pixel ou se ambos)
+                elif s["interval"] >= 1.0 and (now - s["last_use"] > s["interval"]):
+                    should_cast = True
+
+                if should_cast:
+                    print(f"Usando skill: {s['key']}")
+                    use_potion(s["key"])
+                    s["last_use"] = now
             
             time.sleep(check_interval)
             

@@ -1,0 +1,6 @@
+pyautogui
+keyboard
+numpy
+Pillow
+python-dotenv
+customtkinter

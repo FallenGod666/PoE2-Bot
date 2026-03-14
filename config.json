@@ -1,0 +1,120 @@
+{
+    "hp": {
+        "coords": [
+            663,
+            597
+        ],
+        "color": [
+            36,
+            36,
+            36
+        ],
+        "key": "1"
+    },
+    "mana": {
+        "coords": [
+            882,
+            618
+        ],
+        "color": [
+            36,
+            36,
+            36
+        ],
+        "key": "2"
+    },
+    "interval": 0.1,
+    "cooldown": 1.0,
+    "skills": [
+        {
+            "key": "3",
+            "timer": 0.0,
+            "enabled": false,
+            "use_pixel": false,
+            "pixel_coords": [
+                0,
+                0
+            ],
+            "pixel_color": [
+                0,
+                0,
+                0
+            ]
+        },
+        {
+            "key": "4",
+            "timer": 0.0,
+            "enabled": false,
+            "use_pixel": false,
+            "pixel_coords": [
+                0,
+                0
+            ],
+            "pixel_color": [
+                0,
+                0,
+                0
+            ]
+        },
+        {
+            "key": "r",
+            "timer": 0.0,
+            "enabled": false,
+            "use_pixel": false,
+            "pixel_coords": [
+                0,
+                0
+            ],
+            "pixel_color": [
+                0,
+                0,
+                0
+            ]
+        },
+        {
+            "key": "t",
+            "timer": 0.0,
+            "enabled": false,
+            "use_pixel": false,
+            "pixel_coords": [
+                0,
+                0
+            ],
+            "pixel_color": [
+                0,
+                0,
+                0
+            ]
+        },
+        {
+            "key": "f",
+            "timer": 0.0,
+            "enabled": false,
+            "use_pixel": false,
+            "pixel_coords": [
+                0,
+                0
+            ],
+            "pixel_color": [
+                0,
+                0,
+                0
+            ]
+        },
+        {
+            "key": "g",
+            "timer": 0.0,
+            "enabled": false,
+            "use_pixel": false,
+            "pixel_coords": [
+                0,
+                0
+            ],
+            "pixel_color": [
+                0,
+                0,
+                0
+            ]
+        }
+    ]
+}

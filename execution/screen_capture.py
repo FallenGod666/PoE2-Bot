@@ -3,8 +3,13 @@ import PIL.ImageGrab as ImageGrab
 import numpy as np
 
 def get_pixel_color(x, y):
-    """Retorna a cor RGB de um pixel específico."""
-    return pyautogui.pixel(x, y)
+    """Retorna a cor RGB de um pixel específico, com verificação de limites."""
+    width, height = pyautogui.size()
+    if 0 <= x < width and 0 <= y < height:
+        return pyautogui.pixel(x, y)
+    else:
+        print(f"Aviso: Coordenadas ({x}, {y}) fora dos limites da tela ({width}x{height}).")
+        return (0, 0, 0)
 
 def is_color_in_range(color, target_rgb, tolerance=30):
     """Verifica se a cor está dentro de uma tolerância do alvo."""
