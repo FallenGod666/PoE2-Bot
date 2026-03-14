@@ -61,16 +61,23 @@ def run_bot():
             
             # Checar Saúde
             if now - last_hp_use > cooldown:
-                # check_threshold retorna True se a cor capturada for similar à alvo
-                is_healthy = check_threshold(hp_coords[0], hp_coords[1], hp_color)
+                # check_threshold agora retorna (is_healthy, current_color)
+                from screen_capture import is_green
+                is_healthy, current_color = check_threshold(hp_coords[0], hp_coords[1], hp_color)
+                
+                # Se não for saudável e não for verde (veneno), então usa poção
                 if not is_healthy:
-                    print("HP baixo detectado!")
-                    use_potion(hp_key)
-                    last_hp_use = now
+                    is_poisoned = is_green(current_color)
+                    if not is_poisoned:
+                        print(f"HP baixo detectado! Cor: {current_color} | Alvo: {hp_color}")
+                        use_potion(hp_key)
+                        last_hp_use = now
+                    else:
+                        print(f"HP Verde (veneno) detectado, ignorando poção. Cor: {current_color}")
             
             # Checar Mana
             if now - last_mana_use > cooldown:
-                is_mana_full = check_threshold(mana_coords[0], mana_coords[1], mana_color)
+                is_mana_full, _ = check_threshold(mana_coords[0], mana_coords[1], mana_color)
                 if not is_mana_full:
                     print("Mana baixa detectada!")
                     use_potion(mana_key)
@@ -85,8 +92,8 @@ def run_bot():
                 
                 # Prioridade 1: Pixel (Se habilitado, casta se o pixel estiver ativo)
                 if s["use_pixel"]:
-                    # check_threshold retorna True se as cores batem (skill ativa/clara)
-                    is_active = check_threshold(s["pixel_coords"][0], s["pixel_coords"][1], s["pixel_color"])
+                    # check_threshold agora retorna (is_active, current_color)
+                    is_active, _ = check_threshold(s["pixel_coords"][0], s["pixel_coords"][1], s["pixel_color"])
                     # Cooldown interno de 0.5s para não spammar enquanto o pixel brilha
                     if is_active and (now - s["last_use"] > 0.5):
                         should_cast = True
