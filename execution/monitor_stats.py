@@ -1,34 +1,61 @@
 import time
 import os
 import json
-from screen_capture import check_threshold
-from potion_controls import use_potion
+try:
+    from screen_capture import check_threshold, is_green
+    from potion_controls import use_potion
+except ImportError:
+    # Fallback para desenvolvimento local se os arquivos não estiverem no mesmo dir
+    check_threshold = None
+    is_green = None
+    use_potion = print
+
 CONFIG_FILE = "config.json"
 
 def load_config():
     if not os.path.exists(CONFIG_FILE):
-        print(f"Erro: {CONFIG_FILE} não encontrado. Execute get_coords.py primeiro.")
         return None
-    with open(CONFIG_FILE, 'r') as f:
-        return json.load(f)
+    try:
+        with open(CONFIG_FILE, 'r') as f:
+            return json.load(f)
+    except:
+        return None
 
-def run_bot():
+def run_bot(stop_event=None):
     config = load_config()
     if not config:
+        print("Erro ao carregar config.json")
         return
 
-    # Extraindo configs
-    hp_coords = config["hp"]["coords"]
-    hp_color = tuple(config["hp"]["color"])
-    hp_key = config["hp"]["key"]
+    # Extraindo configs do preset ativo
+    active_name = config.get("active_preset", "Default")
+    presets = config.get("presets", {})
     
-    mana_coords = config["mana"]["coords"]
-    mana_color = tuple(config["mana"]["color"])
-    mana_key = config["mana"]["key"]
+    if active_name not in presets:
+        if presets:
+            active_name = list(presets.keys())[0]
+        else:
+            print("Erro: Nenhum perfil configurado.")
+            return
+
+    data = presets[active_name]
     
-    check_interval = config.get("interval", 0.1)
-    cooldown = config.get("cooldown", 1.0)
-    skills = config.get("skills", [])
+    # Extração segura de campos
+    try:
+        hp_coords = data["hp"]["coords"]
+        hp_color = data["hp"]["color"]
+        hp_key = data["hp"]["key"]
+        
+        mana_coords = data["mana"]["coords"]
+        mana_color = data["mana"]["color"]
+        mana_key = data["mana"]["key"]
+        
+        check_interval = data.get("interval", 0.1)
+        cooldown = data.get("cooldown", 1.0)
+        skills = data.get("skills", [])
+    except KeyError as e:
+        print(f"Erro na estrutura do perfil '{active_name}': campo faltando {e}")
+        return
 
     last_hp_use = 0.0
     last_mana_use = 0.0
@@ -37,80 +64,61 @@ def run_bot():
     skill_timers = []
     for skill in skills:
         skill_timers.append({
-            "key": skill["key"],
-            "interval": float(skill["timer"]),
+            "key": skill.get("key", ""),
+            "interval": float(skill.get("timer", 0)),
             "last_use": 0.0,
             "enabled": skill.get("enabled", False),
             "use_pixel": skill.get("use_pixel", False),
             "pixel_coords": skill.get("pixel_coords", [0, 0]),
-            "pixel_color": tuple(skill.get("pixel_color", [0, 0, 0]))
+            "pixel_color": skill.get("pixel_color", [0, 0, 0])
         })
     
-    print("=== Bot de Poções e Magias Poe Bot ===")
-    print(f"Monitorando HP em {hp_coords} (Tecla: {hp_key})")
-    print(f"Monitorando Mana em {mana_coords} (Tecla: {mana_key})")
-    for i, s in enumerate(skill_timers):
-        status = "ON" if s["enabled"] else "OFF"
-        mode = "Pixel" if s["use_pixel"] else f"Timer ({s['interval']}s)"
-        print(f"Skill {i+1} [{status}]: Tecla {s['key']} ({mode})")
-    print("Pressione CTRL+C para parar.")
-
+    print(f"=== Bot iniciado no perfil: {active_name} ===")
+    
     try:
-        while True:
+        while stop_event is None or not stop_event.is_set():
             now = time.time()
             
             # Checar Saúde
             if now - last_hp_use > cooldown:
-                # check_threshold agora retorna (is_healthy, current_color)
-                from screen_capture import is_green
                 is_healthy, current_color = check_threshold(hp_coords[0], hp_coords[1], hp_color)
-                
-                # Se não for saudável e não for verde (veneno), então usa poção
                 if not is_healthy:
-                    is_poisoned = is_green(current_color)
-                    if not is_poisoned:
-                        print(f"HP baixo detectado! Cor: {current_color} | Alvo: {hp_color}")
+                    if not is_green(current_color):
+                        print(f"HP baixo! Usando {hp_key}")
                         use_potion(hp_key)
                         last_hp_use = now
                     else:
-                        print(f"HP Verde (veneno) detectado, ignorando poção. Cor: {current_color}")
+                        print("HP Verde detectado (Veneno) - ignorando.")
             
             # Checar Mana
             if now - last_mana_use > cooldown:
                 is_mana_full, _ = check_threshold(mana_coords[0], mana_coords[1], mana_color)
                 if not is_mana_full:
-                    print("Mana baixa detectada!")
+                    print(f"Mana baixa! Usando {mana_key}")
                     use_potion(mana_key)
                     last_mana_use = now
 
-            # Checar Skills (Magias)
+            # Checar Skills
             for s in skill_timers:
-                if not s["enabled"]:
-                    continue
+                if not s["enabled"]: continue
 
                 should_cast = False
-                
-                # Prioridade 1: Pixel (Se habilitado, casta se o pixel estiver ativo)
                 if s["use_pixel"]:
-                    # check_threshold agora retorna (is_active, current_color)
                     is_active, _ = check_threshold(s["pixel_coords"][0], s["pixel_coords"][1], s["pixel_color"])
-                    # Cooldown interno de 0.5s para não spammar enquanto o pixel brilha
                     if is_active and (now - s["last_use"] > 0.5):
                         should_cast = True
-                
-                # Prioridade 2: Timer (Se timer >= 1s e não estiver usando pixel ou se ambos)
                 elif s["interval"] >= 1.0 and (now - s["last_use"] > s["interval"]):
                     should_cast = True
 
                 if should_cast:
-                    print(f"Usando skill: {s['key']}")
+                    print(f"Skill: {s['key']}")
                     use_potion(s["key"])
                     s["last_use"] = now
             
             time.sleep(check_interval)
             
-    except KeyboardInterrupt:
-        print("\nBot parado pelo usuário.")
+    except Exception as e:
+        print(f"Erro no loop do bot: {e}")
 
 if __name__ == "__main__":
     run_bot()
