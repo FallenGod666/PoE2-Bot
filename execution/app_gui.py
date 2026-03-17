@@ -106,10 +106,8 @@ class PoEBotGUI(ctk.CTk):
         
         self.label_interval = ctk.CTkLabel(self.frame_interval, text="Intervalo Global (s):")
         self.label_interval.pack(side="left", padx=10, pady=5)
-        timer_values = [str(x) for x in range(1, 61)]
-        self.combo_interval = ctk.CTkComboBox(self.frame_interval, values=timer_values, width=80)
-        self.combo_interval.pack(side="right", padx=10, pady=5)
-        self.combo_interval.bind("<MouseWheel>", lambda e, w=self.combo_interval: self._on_mousewheel_scroll(e, w))
+        self.entry_interval = ctk.CTkEntry(self.frame_interval, width=80)
+        self.entry_interval.pack(side="right", padx=10, pady=5)
 
         # Botões de Captura
         self.frame_capture = ctk.CTkFrame(self.frame_left)
@@ -168,8 +166,20 @@ class PoEBotGUI(ctk.CTk):
 
         self.skill_entries = []
         
+        # Registrar cliques fora para desfocar entries
+        self.bind_all("<Button-1>", self._on_any_click)
+
         # O preenchimento das skills agora acontece no refresh_ui() ou init
         self.refresh_ui()
+
+    def _on_any_click(self, event):
+        """Desfoca o widget atual se o clique for fora de um campo de entrada."""
+        # Se o foco atual for um Entry e o clique não for no próprio Entry, desfoca
+        curr_focus = self.focus_get()
+        if isinstance(curr_focus, (ctk.CTkEntry, tk.Entry)):
+            # Se o clique for em algo que não seja o próprio widget em foco
+            if event.widget != curr_focus:
+                self.focus_set()
 
     def get_current_preset_data(self):
         """Retorna os dados do preset ativo."""
@@ -315,16 +325,26 @@ class PoEBotGUI(ctk.CTk):
             
             data["hp"]["key"] = self.entry_hp_key.get()
             data["mana"]["key"] = self.entry_mana_key.get()
-            data["cooldown"] = float(self.combo_interval.get())
+            
+            interval_val = self.entry_interval.get().replace(",", ".")
+            try:
+                data["cooldown"] = float(interval_val)
+            except ValueError:
+                data["cooldown"] = 1.0
             
             new_skills = []
             for i, entries in enumerate(self.skill_entries):
                 key_val = entries["entry_key"].get()
-                timer_val = entries["combo_timer"].get()
+                timer_val = entries["entry_timer"].get().replace(",", ".")
+                
+                try:
+                    timer_float = float(timer_val)
+                except ValueError:
+                    timer_float = 1.0
                 
                 new_skills.append({
                     "key": key_val,
-                    "timer": float(timer_val) if timer_val else 1.0,
+                    "timer": timer_float,
                     "enabled": entries["switch_var"].get() == "on",
                     "use_pixel": entries["pixel_var"].get(),
                     "pixel_coords": entries["pixel_coords"],
@@ -358,12 +378,8 @@ class PoEBotGUI(ctk.CTk):
         self.entry_mana_key.configure(state="readonly")
         
         # Interval
-        timer_values = [str(x) for x in range(1, 61)]
-        try:
-            val = str(int(float(data.get("cooldown", 1.0))))
-        except:
-            val = "1"
-        self.combo_interval.set(val if val in timer_values else "1")
+        self.entry_interval.delete(0, "end")
+        self.entry_interval.insert(0, str(data.get("cooldown", 1.0)))
         
         # Skills
         # Limpar frames antigos se existirem
@@ -398,14 +414,9 @@ class PoEBotGUI(ctk.CTk):
             entry_key.configure(state="readonly", cursor="hand2")
             entry_key.bind("<Button-1>", lambda e, w=entry_key: self.start_hotkey_capture(w))
             
-            combo_timer = ctk.CTkComboBox(row_frame, values=timer_values, width=80)
-            try:
-                t_val = str(int(float(skill.get("timer", 1))))
-            except:
-                t_val = "1"
-            combo_timer.set(t_val if t_val in timer_values else "1")
-            combo_timer.pack(side="left", padx=2)
-            combo_timer.bind("<MouseWheel>", lambda e, w=combo_timer: self._on_mousewheel_scroll(e, w))
+            entry_timer = ctk.CTkEntry(row_frame, width=80)
+            entry_timer.insert(0, str(skill.get("timer", 1.0)))
+            entry_timer.pack(side="left", padx=2)
 
             pixel_var = ctk.BooleanVar(value=skill.get("use_pixel", False))
             pixel_switch = ctk.CTkCheckBox(row_frame, text="Pixel", variable=pixel_var, width=20)
@@ -417,7 +428,7 @@ class PoEBotGUI(ctk.CTk):
             self.skill_entries.append({
                 "switch_var": switch_var,
                 "entry_key": entry_key,
-                "combo_timer": combo_timer,
+                "entry_timer": entry_timer,
                 "pixel_var": pixel_var,
                 "pixel_coords": skill.get("pixel_coords", [0, 0]),
                 "pixel_color": skill.get("pixel_color", [0, 0, 0])
