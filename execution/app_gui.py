@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import sys
+import multiprocessing
 import pyautogui
 import keyboard
 import time
@@ -10,6 +11,7 @@ import threading
 from tkinter import messagebox
 from pathlib import Path
 import tkinter as tk
+# from tkinterweb import HtmlFrame  # Removido por bugs de renderização
 
 # Configuração de caminhos para PyInstaller
 def resource_path(relative_path):
@@ -37,10 +39,35 @@ class PoEBotGUI(ctk.CTk):
         self.stop_event = None
         # Tenta carregar config do diretório local primeiro (para persistência)
         # Se não existir, o load_config lidará com isso
+        # Configuração de caminhos para PyInstaller
         self.config: dict = self.load_config()
+
+        # Browser Process Management
+        self.browser_process = None
+        self.is_browser_detached = False
+        temp_dir = os.path.join(os.getcwd(), ".tmp")
+        os.makedirs(temp_dir, exist_ok=True)
+        self.browser_url_file = os.path.join(temp_dir, "current_url.txt")
+        self.browser_state_file = os.path.join(temp_dir, "browser_state.txt")
+        
+        # Iniciar estado do browser
+        if not os.path.exists(self.browser_state_file):
+            with open(self.browser_state_file, "w") as f:
+                f.write("attached")
+        
+        try:
+            with open(self.browser_state_file, "r") as f:
+                state = f.read().strip()
+                if state == "detached":
+                    self.is_browser_detached = True
+        except:
+            pass
 
         # Configurar fechamento seguro
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+        # ... (rest of standard UI setup omitted for brevity in this replace block, but I must keep the structure)
+        # To be safe, I will include the lines I need to modify specifically.
 
         # Main Layout: 3 rows (Top bar, Left/Right content, Status)
         self.grid_columnconfigure(0, weight=1)
@@ -172,6 +199,35 @@ class PoEBotGUI(ctk.CTk):
         # O preenchimento das skills agora acontece no refresh_ui() ou init
         self.refresh_ui()
 
+        # --- WEB VIEW (Abaixo das Skills) ---
+        self.frame_webview = ctk.CTkFrame(self.frame_right)
+        self.frame_webview.grid(row=2, column=0, padx=20, pady=10, sticky="nsew")
+        self.frame_right.grid_rowconfigure(2, weight=1)
+
+        # Controles do Browser
+        self.browser_controls = ctk.CTkFrame(self.frame_webview)
+        self.browser_controls.pack(fill="x", padx=5, pady=2)
+
+        self.btn_home = ctk.CTkButton(self.browser_controls, text="🏠 Home", height=24, width=80, command=self.reset_browser)
+        self.btn_home.pack(side="left", padx=5)
+
+        detach_text = "🔒 Anexar" if self.is_browser_detached else "🔓 Desprender"
+        self.btn_detach = ctk.CTkButton(self.browser_controls, text=detach_text, height=24, width=100, command=self.toggle_browser_detach)
+        self.btn_detach.pack(side="left", padx=5)
+
+        self.btn_save_url = ctk.CTkButton(self.browser_controls, text="💾 Salvar URL p/ Perfil", height=24, width=140, command=self.save_config)
+        self.btn_save_url.pack(side="right", padx=5)
+
+        # Container para o Browser (HWND será pego daqui)
+        self.browser_container = tk.Frame(self.frame_webview, bg="black")
+        self.browser_container.pack(fill="both", expand=True, padx=5, pady=5)
+        
+        # Iniciar Browser após a janela ser montada
+        self.after(500, self.start_browser)
+        
+        # Bind de Redimensionamento
+        self.browser_container.bind("<Configure>", self.on_browser_resize)
+
     def _on_any_click(self, event):
         """Desfoca o widget atual se o clique for fora de um campo de entrada."""
         # Se o foco atual for um Entry e o clique não for no próprio Entry, desfoca
@@ -280,7 +336,9 @@ class PoEBotGUI(ctk.CTk):
                         # Migração do formato antigo (se não houver "presets")
                         if "presets" not in loaded:
                             config_root["presets"]["Default"] = loaded
-                            self._fix_skill_fields(config_root["presets"]["Default"])
+                            preset_data = config_root["presets"]["Default"]
+                            if isinstance(preset_data, dict):
+                                self._fix_skill_fields(preset_data)
                         else:
                             # Mesclagem segura: garante que active_preset e presets existam
                             config_root.update(loaded)
@@ -288,16 +346,29 @@ class PoEBotGUI(ctk.CTk):
                             presets_dict = config_root.get("presets", {})
                             if isinstance(presets_dict, dict):
                                 for p_name in presets_dict:
-                                    if isinstance(presets_dict[p_name], dict):
-                                        self._fix_skill_fields(presets_dict[p_name])
+                                    p_val = presets_dict[p_name]
+                                    if isinstance(p_val, dict):
+                                        self._fix_skill_fields(p_val)
             except Exception as e:
                 print(f"Erro ao carregar config: {e}")
         
         # Garantia final de estrutura
+        if not isinstance(config_root, dict): config_root = {} # Should not happen
         if "active_preset" not in config_root: config_root["active_preset"] = "Default"
-        if "presets" not in config_root: config_root["presets"] = {"Default": default_preset_data}
-        if config_root["active_preset"] not in config_root["presets"]:
-            config_root["active_preset"] = list(config_root["presets"].keys())[0]
+        
+        presets = config_root.get("presets")
+        if not isinstance(presets, dict):
+            config_root["presets"] = {"Default": default_preset_data}
+            presets = config_root["presets"]
+        
+        for p_name in presets:
+            p_data = presets[p_name]
+            if isinstance(p_data, dict):
+                if "url" not in p_data:
+                    p_data["url"] = "https://maxroll.gg/poe2"
+
+        if config_root["active_preset"] not in presets:
+            config_root["active_preset"] = list(presets.keys())[0]
 
         return config_root
 
@@ -351,6 +422,16 @@ class PoEBotGUI(ctk.CTk):
                     "pixel_color": entries["pixel_color"]
                 })
             data["skills"] = new_skills
+            
+            # Salvar URL atual do webview (lendo do arquivo temporário)
+            try:
+                if os.path.exists(self.browser_url_file):
+                    with open(self.browser_url_file, "r") as f:
+                        current_url = f.read().strip()
+                        if current_url:
+                            data["url"] = current_url
+            except Exception as e:
+                print(f"Erro ao capturar URL: {e}")
 
             with open(CONFIG_FILE, 'w') as f:
                 json.dump(self.config, f, indent=4)
@@ -440,6 +521,10 @@ class PoEBotGUI(ctk.CTk):
         self.save_config(notify=False)
         self.config["active_preset"] = new_name
         self.refresh_ui()
+        
+        # Atualizar Webview (Reinicia com nova URL)
+        self.start_browser()
+        
         self.status_label.configure(text=f"Status: Perfil '{new_name}' carregado.", text_color="royalblue")
 
     def add_preset(self):
@@ -575,9 +660,96 @@ class PoEBotGUI(ctk.CTk):
 
     def on_closing(self):
         self._stop_bot()
+        if self.browser_process:
+            self.browser_process.terminate()
         self.destroy()
         sys.exit()
 
+    # --- BROWSER MANAGEMENT ---
+    def toggle_browser_detach(self):
+        """Alterna entre o modo embutido e o modo janela flutuante."""
+        self.is_browser_detached = not self.is_browser_detached
+        state = "detached" if self.is_browser_detached else "attached"
+        
+        try:
+            with open(self.browser_state_file, "w") as f:
+                f.write(state)
+        except Exception as e:
+            print(f"Erro ao salvar estado do browser: {e}")
+            
+        if self.is_browser_detached:
+            self.btn_detach.configure(text="🔒 Anexar")
+        else:
+            self.btn_detach.configure(text="🔓 Desprender")
+
+    def start_browser(self):
+        """Inicia o processo do browser usando PySide6 (Edge/Chromium)."""
+        if self.browser_process:
+            try:
+                self.browser_process.terminate()
+            except:
+                pass
+            self.browser_process = None
+            
+        current_preset = self.config["active_preset"]
+        initial_url = self.config["presets"][current_preset].get("url", "https://maxroll.gg/poe2")
+        
+        # Iniciar processo do provedor PySide6
+        # Argumentos: HWND do container, URL inicial, Caminho do arquivo de URL, Caminho do arquivo de estado
+        hwnd = self.browser_container.winfo_id()
+        python_exe = sys.executable
+        if getattr(sys, 'frozen', False):
+            # No EXE, o python_exe é o próprio PoE2-Bot.exe
+            cmd = [python_exe, "--browser"]
+        else:
+            # Em dev, precisamos chamar o script com python
+            # sys.argv[0] traz o caminho do script atual (app_gui.py)
+            cmd = [python_exe, sys.argv[0], "--browser"]
+
+        cmd.extend([
+            str(hwnd), 
+            initial_url, 
+            os.path.abspath(self.browser_url_file),
+            os.path.abspath(self.browser_state_file)
+        ])
+        
+        try:
+            self.browser_process = subprocess.Popen(cmd)
+        except Exception as e:
+            print(f"Erro ao iniciar browser: {e}")
+
+    def reset_browser(self):
+        """Reseta para a URL padrão do Maxroll."""
+        url = "https://maxroll.gg/poe2"
+        # Forçamos a escrita no arquivo de URL para que o browser atualice se estiver aberto
+        try:
+            with open(self.browser_url_file, "w") as f:
+                f.write(url)
+        except:
+            pass
+        # Restartamos pra garantir que ele volte pro home mesmo que tenha navegado longe
+        self.start_browser()
+
+    def on_browser_resize(self, event):
+        """O resize agora é tratado pelo timer no browser_provider.py."""
+        pass
+
 if __name__ == "__main__":
-    app = PoEBotGUI()
-    app.mainloop()
+    multiprocessing.freeze_support()
+    
+    # Check for browser mode
+    if len(sys.argv) > 1 and sys.argv[1] == "--browser":
+        try:
+            from browser_provider import main as browser_main
+        except ImportError:
+            from execution.browser_provider import main as browser_main
+        
+        # O browser_provider espera: hwnd, url, url_file, state_file
+        # sys.argv atual: [exe, --browser, hwnd, url, url_file, state_file]
+        new_args = [sys.argv[0]]
+        new_args.extend(sys.argv[2:])
+        sys.argv = new_args
+        browser_main()
+    else:
+        app = PoEBotGUI()
+        app.mainloop()

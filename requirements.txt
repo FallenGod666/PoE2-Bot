@@ -4,3 +4,5 @@ numpy
 Pillow
 python-dotenv
 customtkinter
+PySide6
+pywin32
